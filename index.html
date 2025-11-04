@@ -50,7 +50,7 @@
 
     <section class="mt-6 p-4 bg-white rounded-2xl shadow">
       <div class="flex items-center gap-3 flex-wrap">
-        <button id="checkBtn" class="px-4 py-2 rounded-xl bg-black text-white text-sm disabled:opacity-50">乖離率を調べる</button>
+        <button id="checkBtn" type="button" onclick="if(window.__run1540){window.__run1540();} return false;" class="px-4 py-2 rounded-xl bg-black text-white text-sm">乖離率を調べる</button>
         <div id="status" class="text-sm text-gray-500">モードを選んでボタンを押してください</div>
       </div>
       <div class="mt-4 grid gap-3 md:grid-cols-3">
@@ -245,8 +245,28 @@
     }
 
     function wire(){
+      // expose a global fallback runner for inline onclick
+      window.__run1540 = () => { run().catch(()=>enableBtn()); };
       // Main button
-      const b=$('checkBtn'); if(b){ b.addEventListener('click',()=>{ run().catch(()=>enableBtn()); }); enableBtn(); }
+      const b=$('checkBtn'); if(b){ b.addEventListener('click',()=>{ window.__run1540(); }); enableBtn(); }
+      // Document-level safety (in case event listeners fail)
+      document.addEventListener('click',(e)=>{ if((e.target&&e.target.id==='checkBtn')||(e.target&&e.target.closest&&e.target.closest('#checkBtn'))){ window.__run1540(); }});
+      // Tabs
+      const td=$('tabDay'); if(td) td.addEventListener('click', setModeDay);
+      const ts=$('tabScalp'); if(ts) ts.addEventListener('click', setModeScalp);
+      // Manual button
+      const mb=$('manualBtn'); if(mb){ mb.addEventListener('click',()=>{
+        const x=parseFloat($('xauManual').value), j=parseFloat($('fxManual').value), p=parseFloat($('etfManual').value), k=parseFloat($('kManual').value);
+        if(!isFinite(x)||!isFinite(j)||!isFinite(p)){ $('manualMsg').textContent='XAU/USD・USD/JPY・1540の3つは必須です。'; return; }
+        $('xauPrice').textContent=fmt(x,4); $('fxPrice').textContent=fmt(j,3); $('etfPrice').textContent=fmt(p,2);
+        if(isFinite(k)){ const theo=x*j*k; const dev=p/theo-1; $('theo').textContent=fmt(theo,2); $('dev').textContent=(dev*100).toFixed(2)+'%'; setBadge(dev); $('status').textContent='手動入力で計算しました'; $('kVal').textContent=k.toFixed(8); }
+        else{ $('theo').textContent='--'; $('dev').textContent='--'; const bd=$('badge'); if(bd){ bd.className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-gray-200 text-gray-700'; bd.textContent='k を入力すると理論値・乖離率を計算できます'; } $('status').textContent='k 未入力のため理論値は計算できません'; }
+      }); }
+      // Default mode
+      setModeDay();
+      // Ensure button becomes clickable even if earlier JS errored
+      setTimeout(()=>enableBtn(), 1000);
+    }); enableBtn(); }
       // Tabs
       const td=$('tabDay'); if(td) td.addEventListener('click', setModeDay);
       const ts=$('tabScalp'); if(ts) ts.addEventListener('click', setModeScalp);
