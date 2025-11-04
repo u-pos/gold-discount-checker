@@ -4,8 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>1540 Discount Checker (Server Mode)</title>
-
-  <!-- 外部スクリプトは Tailwind CDN のみ許可。これで余計な share-modal.js を実行させない -->
+  <!-- 外部スクリプトは Tailwind のみ許可（テーマJSの実行をブロック） -->
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self';
                  script-src 'self' https://cdn.tailwindcss.com 'unsafe-inline';
@@ -13,52 +12,58 @@
                  img-src 'self' data:;
                  connect-src 'self';
                  frame-ancestors 'none'">
-
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50 text-gray-900">
-  <div class="max-w-xl mx-auto p-6">
+  <div class="max-w-2xl mx-auto p-6">
     <h1 class="text-2xl font-bold mb-2">1540 Discount Checker</h1>
     <p class="text-sm text-gray-600 mb-4">
-      GitHub Actions が生成する <code>data.json</code> を読み込み、乖離率を表示します。
+      GitHub Actions が生成する <code>data.json</code> を読み込み、
+      デイトレ（3日回帰）/ スキャル（5分/15分）で乖離率を表示します。
     </p>
 
-    <div class="grid gap-3 md:grid-cols-3">
-      <div class="p-4 bg-white rounded-2xl shadow">
-        <div class="text-xs text-gray-500">XAU/USD</div>
-        <div id="xau" class="text-xl font-semibold">--</div>
-      </div>
-      <div class="p-4 bg-white rounded-2xl shadow">
-        <div class="text-xs text-gray-500">USD/JPY</div>
-        <div id="jpy" class="text-xl font-semibold">--</div>
-      </div>
-      <div class="p-4 bg-white rounded-2xl shadow">
-        <div class="text-xs text-gray-500">1540.T</div>
-        <div id="etf" class="text-xl font-semibold">--</div>
+    <!-- モード切替 -->
+    <div class="flex flex-wrap gap-2 mb-4">
+      <button id="m-day"  type="button" class="px-3 py-1.5 rounded-xl text-sm bg-black text-white">デイトレ(3日)</button>
+      <button id="m-5m"   type="button" class="px-3 py-1.5 rounded-xl text-sm bg-white text-gray-800 border">スキャル(5分)</button>
+      <button id="m-15m"  type="button" class="px-3 py-1.5 rounded-xl text-sm bg-white text-gray-800 border">スキャル(15分)</button>
+      <div class="ml-auto flex items-center gap-2">
+        <button id="btn" type="button" class="px-4 py-2 rounded-xl bg-black text-white text-sm">乖離率を調べる</button>
+        <button id="openJson" type="button" class="px-3 py-2 rounded-xl bg-gray-200 text-gray-800 text-xs">data.json を開く</button>
       </div>
     </div>
 
-    <div class="mt-6 p-4 bg-white rounded-2xl shadow">
-      <div class="flex items-center gap-3 flex-wrap">
-        <button id="btn" type="button" class="px-4 py-2 rounded-xl bg-black text-white text-sm">乖離率を調べる</button>
-        <button id="openJson" type="button" class="px-3 py-2 rounded-xl bg-gray-200 text-gray-800 text-xs">
-          data.json を開く
-        </button>
-        <div id="status" class="text-sm text-gray-500">data.json を読み込みます</div>
+    <!-- 現在値 -->
+    <section class="grid gap-3 md:grid-cols-3">
+      <div class="p-4 bg-white rounded-2xl shadow">
+        <div class="text-xs text-gray-500">XAU/USD <span id="t-xau" class="text-[10px] text-gray-400"></span></div>
+        <div id="xau" class="text-xl font-semibold">--</div>
       </div>
+      <div class="p-4 bg-white rounded-2xl shadow">
+        <div class="text-xs text-gray-500">USD/JPY <span id="t-jpy" class="text-[10px] text-gray-400"></span></div>
+        <div id="jpy" class="text-xl font-semibold">--</div>
+      </div>
+      <div class="p-4 bg-white rounded-2xl shadow">
+        <div class="text-xs text-gray-500">1540.T <span id="t-etf" class="text-[10px] text-gray-400"></span></div>
+        <div id="etf" class="text-xl font-semibold">--</div>
+      </div>
+    </section>
 
-      <div class="mt-4 grid gap-3 md:grid-cols-3">
+    <!-- 計算結果 -->
+    <section class="mt-6 p-4 bg-white rounded-2xl shadow">
+      <div id="status" class="text-sm text-gray-500 mb-3">data.json を読み込みます</div>
+      <div class="grid gap-3 md:grid-cols-3">
         <div><div class="text-xs text-gray-500">推定 k</div><div id="k" class="text-lg font-medium">--</div></div>
         <div><div class="text-xs text-gray-500">理論値（JPY）</div><div id="theo" class="text-lg font-medium">--</div></div>
         <div><div class="text-xs text-gray-500">乖離率</div><div id="dev" class="text-lg font-bold">--</div></div>
       </div>
-
       <div id="badge" class="mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-gray-200 text-gray-700">判定待ち</div>
       <div id="time" class="mt-2 text-xs text-gray-500"></div>
       <pre id="debug" class="mt-3 text-xs text-red-600 whitespace-pre-wrap"></pre>
-    </div>
+    </section>
 
     <footer class="mt-8 text-xs text-gray-500">
+      ※ 1540.T は東証の取引時間（9:00–15:00 JST）外では前日終値になることがあります。<br/>
       このツールは投資助言ではありません。自己責任でご利用ください。
     </footer>
   </div>
@@ -66,52 +71,50 @@
   <script>
     const $ = id => document.getElementById(id);
     const JSON_URL = './data.json';
+    let mode = 'day'; // 'day' | '5m' | '15m'
 
-    function fmt(n, d = 2) {
-      return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: d }) : '--';
+    const fmt = (n, d=2) => Number.isFinite(n) ? n.toLocaleString(undefined,{maximumFractionDigits:d}) : '--';
+    const safeParseJSON = (t) => { try { return JSON.parse(t); } catch { return null; } };
+    function setMode(m){
+      mode = m;
+      $('m-day').className  = 'px-3 py-1.5 rounded-xl text-sm ' + (m==='day' ? 'bg-black text-white' : 'bg-white text-gray-800 border');
+      $('m-5m').className   = 'px-3 py-1.5 rounded-xl text-sm ' + (m==='5m'  ? 'bg-black text-white' : 'bg-white text-gray-800 border');
+      $('m-15m').className  = 'px-3 py-1.5 rounded-xl text-sm ' + (m==='15m' ? 'bg-black text-white' : 'bg-white text-gray-800 border');
     }
 
-    function safeParseJSON(text) {
-      try { return JSON.parse(text); }
-      catch { return null; }
-    }
-
-    async function load() {
-      const btn = $('btn');
-      const st  = $('status');
-      const dbg = $('debug');
-
-      btn.disabled = true;
-      st.textContent = '取得中…';
-      dbg.textContent = '';
-
-      try {
-        const res = await fetch(`${JSON_URL}?ts=${Date.now()}`, { cache: 'no-store' });
-        if (!res.ok) throw new Error(`fetch failed: ${res.status} ${res.statusText}`);
-
-        // まずテキストで取得してから安全にJSONパース（空/HTMLでも落ちない）
+    async function load(){
+      const st=$('status'), dbg=$('debug'); const btn=$('btn');
+      btn.disabled = true; st.textContent='取得中…'; dbg.textContent='';
+      try{
+        const res = await fetch(JSON_URL+'?ts='+Date.now(),{cache:'no-store'});
+        if(!res.ok) throw new Error(`fetch failed: ${res.status} ${res.statusText}`);
         const raw = await res.text();
-        if (!raw || !raw.trim()) throw new Error('data.json is empty（まだ生成されていません）');
+        if(!raw || !raw.trim()) throw new Error('data.json is empty');
+        const j = safeParseJSON(raw); if(!j) throw new Error('data.json is not valid JSON');
 
-        const j = safeParseJSON(raw);
-        if (!j || typeof j !== 'object') {
-          throw new Error('data.json is not valid JSON.\n---raw---\n' + raw.slice(0, 300));
+        // 現在値と取得時刻
+        $('xau').textContent = fmt(j.xauusd,4);
+        $('jpy').textContent = fmt(j.usdjpy,3);
+        $('etf').textContent = fmt(j.price1540,2);
+        $('t-xau').textContent = j.time_src?.xau || '';
+        $('t-jpy').textContent = j.time_src?.jpy || '';
+        $('t-etf').textContent = j.time_src?.etf || '';
+
+        // 表示モード別に切替
+        let k, theo, dev, label;
+        if(mode==='day'){
+          k=j.k_day; theo=j.theo_day; dev=j.dev_day; label='過去3営業日の回帰で計算';
+        }else if(mode==='5m'){
+          k=j.k_5m; theo=j.theo_5m; dev=j.dev_5m; label='5分足の回帰で計算（直近）';
+        }else{
+          k=j.k_15m; theo=j.theo_15m; dev=j.dev_15m; label='15分足の回帰で計算（直近）';
         }
 
-        $('xau').textContent = fmt(j.xauusd, 4);
-        $('jpy').textContent = fmt(j.usdjpy, 3);
-        $('etf').textContent = fmt(j.price1540, 2);
-
-        // デイトレ（3日回帰）を優先。スキャル（5分）もあれば代替で使用
-        const k    = Number.isFinite(j.k_day)    ? j.k_day    : j.k_scalp;
-        const theo = Number.isFinite(j.theo_day) ? j.theo_day : j.theo_scalp;
-        const dev  = Number.isFinite(j.dev_day)  ? j.dev_day  : j.dev_scalp;
-
         $('k').textContent    = Number.isFinite(k)    ? k.toFixed(8) : '--';
-        $('theo').textContent = Number.isFinite(theo) ? fmt(theo, 2) : '--';
-        $('dev').textContent  = Number.isFinite(dev)  ? (dev * 100).toFixed(2) + '%' : '--';
+        $('theo').textContent = Number.isFinite(theo) ? fmt(theo,2) : '--';
+        $('dev').textContent  = Number.isFinite(dev)  ? (dev*100).toFixed(2)+'%' : '--';
 
-        const b = $('badge');
+        const b=$('badge');
         if (Number.isFinite(dev) && dev <= -0.01) {
           b.textContent = 'Discount Time（-1%以下）かも';
           b.className = 'mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-green-100 text-green-800';
@@ -120,21 +123,23 @@
           b.className = 'mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-yellow-100 text-yellow-800';
         }
 
-        $('time').textContent = '更新: ' + (j.time_jst || '');
-        st.textContent = 'data.json から読み込みました';
-      } catch (e) {
+        $('time').textContent = '更新: ' + (j.time_jst || '') + ' / ' + label;
+        st.textContent='data.json から読み込みました';
+      }catch(e){
         console.error(e);
-        $('status').textContent = '取得失敗：' + e.message;
-        $('debug').textContent  = (e && e.stack) ? e.stack : String(e);
-      } finally {
-        btn.disabled = false;
+        st.textContent='取得失敗：'+e.message; $('debug').textContent=(e&&e.stack)?e.stack:String(e);
+      }finally{
+        btn.disabled=false;
       }
     }
 
+    $('m-day').addEventListener('click',()=>{ setMode('day'); });
+    $('m-5m').addEventListener('click', ()=>{ setMode('5m');  });
+    $('m-15m').addEventListener('click',()=>{ setMode('15m'); });
     $('btn').addEventListener('click', load);
-    $('openJson').addEventListener('click', () => {
-      window.open(`${JSON_URL}?ts=${Date.now()}`, '_blank');
-    });
+    $('openJson').addEventListener('click',()=>window.open(JSON_URL+'?ts='+Date.now(),'_blank'));
+
+    setMode('day');
   </script>
 </body>
 </html>
