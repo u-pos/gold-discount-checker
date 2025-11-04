@@ -71,100 +71,91 @@
   </div>
 
   <script>
+  (function(){
     const $ = (id) => document.getElementById(id);
 
-    // ---- UI state ----
-    let mode = 'day'; // 'day' or 'scalp'
+    // ---- Safe logger & UI helpers ----
+    function showError(msg){ try{ const s=$('status'); if(s) s.textContent=msg; }catch(_){}
+      console.error(msg);
+    }
+    function enableBtn(){ const b=$('checkBtn'); if(!b) return; b.disabled=false; b.style.pointerEvents='auto'; b.style.opacity='1'; }
+    function disableBtn(){ const b=$('checkBtn'); if(!b) return; b.disabled=true; b.style.pointerEvents='none'; b.style.opacity='0.6'; }
 
+    // Always keep the main button usable even if errors happen
+    window.addEventListener('error', ()=>enableBtn());
+    window.addEventListener('unhandledrejection', ()=>enableBtn());
+
+    // ---- Data sources ----
     const YAHOO_CHART = (symbol, params={}) => {
       const qp = new URLSearchParams({ interval: '1d', range: '3mo', ...params });
+      // Use https->https to avoid mixed-content/CORS issues
       return `https://r.jina.ai/https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${qp}`;
     };
 
-    async function fetchYahoo(symbol, params) {
+    async function fetchYahoo(symbol, params){
       const qp = new URLSearchParams({ interval: '1d', range: '3mo', ...params });
       const urls = [
         `https://r.jina.ai/https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${qp}`,
         `https://r.jina.ai/https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${qp}`
       ];
       let lastErr;
-      for (const u of urls) {
-        try {
-          const ctrl = new AbortController();
-          const to = setTimeout(()=>ctrl.abort(), 8000);
-          const res = await fetch(u, { cache: 'no-store', signal: ctrl.signal });
-          clearTimeout(to);
-          if (!res.ok) throw new Error('HTTP '+res.status);
-          const data = await res.json();
-          const r = data?.chart?.result?.[0];
-          if (r) return r;
-          lastErr = new Error('No result');
-        } catch (e) { lastErr = e; }
+      for (const u of urls){
+        try{
+          const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),8000);
+          const res=await fetch(u,{cache:'no-store',signal:ctrl.signal}); clearTimeout(to);
+          if(!res.ok) throw new Error('HTTP '+res.status);
+          const data=await res.json();
+          const r=data?.chart?.result?.[0];
+          if(r) return r; else lastErr=new Error('No result');
+        }catch(e){ lastErr=e; }
       }
-      throw lastErr || new Error('fetchYahoo failed');
+      throw lastErr||new Error('fetchYahoo failed');
     }
 
-    async function fetchStooqCsv(symbol) {
+    async function fetchStooqCsv(symbol){
       const url = `https://stooq.com/q/l/?s=${encodeURIComponent(symbol)}&f=sd2t2ohlcv&h&e=csv`;
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) throw new Error('stooq HTTP ' + res.status);
-      const csv = await res.text();
-      const lines = csv.trim().split('
-');
-      if (lines.length < 2) throw new Error('stooq no rows');
-      const cols = lines[1].split(',');
-      const close = parseFloat(cols[6]);
-      if (!isFinite(close)) throw new Error('stooq parse fail');
+      const res = await fetch(url, { cache:'no-store' });
+      if(!res.ok) throw new Error('stooq HTTP '+res.status);
+      const txt = await res.text();
+      const lines = txt.trim().split('\n'); if(lines.length<2) throw new Error('stooq no rows');
+      const cols = lines[1].split(','); const close=parseFloat(cols[6]);
+      if(!isFinite(close)) throw new Error('stooq parse fail');
       return close;
     }
 
-    function fmt(n, digits=2) { return isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: digits }) : '--'; }
+    function fmt(n, digits=2){ return isFinite(n) ? n.toLocaleString(undefined,{maximumFractionDigits:digits}) : '--'; }
 
-    // ---- Align helpers ----
-    function alignDaily(xau, jpy, etf) {
-      const toMap = (r) => {
-        const ts = r.timestamp || []; const closes = r.indicators?.quote?.[0]?.close || [];
-        const m = new Map();
-        for (let i=0;i<ts.length;i++){const c=closes[i]; if(!isFinite(c)) continue; const d=new Date(ts[i]*1000).toISOString().slice(0,10); m.set(d,c);} 
-        return m;
-      };
-      const mx = toMap(xau), mj = toMap(jpy), me = toMap(etf);
-      const dates = [...mx.keys()].filter(d => mj.has(d) && me.has(d)).sort();
+    function alignDaily(xau,jpy,etf){
+      const toMap=(r)=>{ const ts=r.timestamp||[]; const closes=r.indicators?.quote?.[0]?.close||[]; const m=new Map();
+        for(let i=0;i<ts.length;i++){ const c=closes[i]; if(!isFinite(c)) continue; const d=new Date(ts[i]*1000).toISOString().slice(0,10); m.set(d,c);} return m; };
+      const mx=toMap(xau), mj=toMap(jpy), me=toMap(etf);
+      const dates=[...mx.keys()].filter(d=>mj.has(d)&&me.has(d)).sort();
       return dates.map(d=>({date:d,xau:mx.get(d),jpy:mj.get(d),etf:me.get(d)}));
     }
 
-    function alignIntraday(xau, jpy, etf, interval) {
-      // 5m/15m の各 timestamp を分解し、同一timestampのもののみ採用
-      const toMap = (r) => {
-        const ts = r.timestamp || []; const closes = r.indicators?.quote?.[0]?.close || [];
-        const m = new Map();
-        for (let i=0;i<ts.length;i++){ const c=closes[i]; if(!isFinite(c)) continue; const t = ts[i]*1000; m.set(t, c);} 
-        return m;
-      };
-      const mx = toMap(xau), mj = toMap(jpy), me = toMap(etf);
-      const keys = [...mx.keys()].filter(t => mj.has(t) && me.has(t)).sort((a,b)=>a-b);
-      return keys.map(t=>({ t, xau:mx.get(t), jpy:mj.get(t), etf:me.get(t) }));
+    function alignIntraday(xau,jpy,etf){
+      const toMap=(r)=>{ const ts=r.timestamp||[]; const closes=r.indicators?.quote?.[0]?.close||[]; const m=new Map();
+        for(let i=0;i<ts.length;i++){ const c=closes[i]; if(!isFinite(c)) continue; const t=ts[i]*1000; m.set(t,c);} return m; };
+      const mx=toMap(xau), mj=toMap(jpy), me=toMap(etf);
+      const keys=[...mx.keys()].filter(t=>mj.has(t)&&me.has(t)).sort((a,b)=>a-b);
+      return keys.map(t=>({t,xau:mx.get(t),jpy:mj.get(t),etf:me.get(t)}));
     }
 
-    function estimateKRegression(rows) {
-      let num=0, den=0, n=0;
-      for (const r of rows){ const x=r.xau*r.jpy, y=r.etf; if(isFinite(x)&&isFinite(y)&&x>0&&y>0){num+=x*y; den+=x*x; n++;}}
-      if (den<=0 || n<5) throw new Error('十分なデータがありません');
-      return num/den;
-    }
+    function estimateKRegression(rows){ let num=0, den=0, n=0; for(const r of rows){ const x=r.xau*r.jpy, y=r.etf; if(isFinite(x)&&isFinite(y)&&x>0&&y>0){ num+=x*y; den+=x*x; n++; }} if(den<=0||n<5) throw new Error('十分なデータがありません'); return num/den; }
 
     async function getLivePriceFromYahoo(result){
-      const meta = result.meta || {}; let p = meta.regularMarketPrice;
-      if(!isFinite(p)){ const closes=result.indicators?.quote?.[0]?.close||[]; for(let i=closes.length-1;i>=0;i--){const c=closes[i]; if(isFinite(c)){p=c;break;}}}
+      const meta=result.meta||{}; let p=meta.regularMarketPrice;
+      if(!isFinite(p)){ const closes=result.indicators?.quote?.[0]?.close||[]; for(let i=closes.length-1;i>=0;i--){ const c=closes[i]; if(isFinite(c)){ p=c; break; } } }
       if(!isFinite(p)) throw new Error('no live price');
       return p;
     }
 
-    function setBadge(dev){
-      const b=$('badge');
-      if (dev<=-0.01){ b.textContent='Discount Time（-1%以下）かも'; b.className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-green-100 text-green-800'; }
-      else { b.textContent='様子見（-1%未満ではない）'; b.className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-yellow-100 text-yellow-800'; }
-    }
+    function setBadge(dev){ const b=$('badge'); if(!b) return; if(dev<=-0.01){ b.textContent='Discount Time（-1%以下）かも'; b.className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-green-100 text-green-800'; } else { b.textContent='様子見（-1%未満ではない）'; b.className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-yellow-100 text-yellow-800'; } }
+
+    // ---- Modes ----
+    let mode='day';
+    function setModeDay(){ mode='day'; $('tabDay').className='px-4 py-2 rounded-xl text-sm font-medium bg-black text-white'; $('tabScalp').className='px-4 py-2 rounded-xl text-sm font-medium bg-white text-gray-800 border'; const sc=$('scalpControls'); if(sc) sc.classList.add('hidden'); const st=$('status'); if(st) st.textContent='デイトレ（3日・日足）を選択中'; }
+    function setModeScalp(){ mode='scalp'; $('tabScalp').className='px-4 py-2 rounded-xl text-sm font-medium bg-black text-white'; $('tabDay').className='px-4 py-2 rounded-xl text-sm font-medium bg-white text-gray-800 border'; const sc=$('scalpControls'); if(sc) sc.classList.remove('hidden'); const st=$('status'); if(st) st.textContent='スキャル（分足）を選択中'; }
 
     async function runDay(){
       const [xauR,jpyR,etfR]=await Promise.all([
@@ -172,7 +163,7 @@
         fetchYahoo('JPY=X',{range:'1mo',interval:'1d'}),
         fetchYahoo('1540.T',{range:'1mo',interval:'1d'})
       ]);
-      const rows=alignDaily(xauR,jpyR,etfR).slice(-3); // 過去3営業日
+      const rows=alignDaily(xauR,jpyR,etfR).slice(-3);
       const k=estimateKRegression(rows);
       const [xauLive,jpyLive,etfLive]=await Promise.all([
         getLivePriceFromYahoo(xauR).catch(()=>fetchStooqCsv('xauusd')),
@@ -183,17 +174,17 @@
     }
 
     async function runScalp(){
-      const interval = $('scalpInterval').value; // 5m/15m
-      const barsWant = parseInt($('scalpBars').value,10)||36;
-      const range = interval==='5m' ? '5d' : '3mo'; // 5mは最大5日程度/15mはもっと長く取れる
+      const interval = (document.getElementById('scalpInterval')?.value)||'5m';
+      const barsWant = parseInt((document.getElementById('scalpBars')?.value)||'36',10);
+      const range = interval==='5m' ? '5d' : '3mo';
       const [xauR,jpyR,etfR]=await Promise.all([
         fetchYahoo('XAUUSD=X',{range,interval}),
         fetchYahoo('JPY=X',{range,interval}),
         fetchYahoo('1540.T',{range,interval})
       ]);
-      const rowsAll = alignIntraday(xauR,jpyR,etfR,interval);
-      const rows = rowsAll.slice(-barsWant);
-      const k = estimateKRegression(rows);
+      const rowsAll=alignIntraday(xauR,jpyR,etfR);
+      const rows=rowsAll.slice(-barsWant);
+      const k=estimateKRegression(rows);
       const [xauLive,jpyLive,etfLive]=await Promise.all([
         getLivePriceFromYahoo(xauR).catch(()=>fetchStooqCsv('xauusd')),
         getLivePriceFromYahoo(jpyR).catch(()=>fetchStooqCsv('usdjpy')),
@@ -203,51 +194,42 @@
     }
 
     async function run(){
-      const btn=$('checkBtn'); const status=$('status'); btn.disabled=true; status.textContent='取得中…';
-      $('badge').className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-gray-200 text-gray-700'; $('badge').textContent='判定待ち';
+      const st=$('status'); disableBtn(); if(st) st.textContent='取得中…';
+      const badge=$('badge'); if(badge){ badge.className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-gray-200 text-gray-700'; badge.textContent='判定待ち'; }
       try{
-        const {k,xauLive,jpyLive,etfLive} = (mode==='day') ? await runDay() : await runScalp();
+        const exec=(mode==='day')?runDay:runScalp;
+        const {k,xauLive,jpyLive,etfLive}=await exec();
         $('xauPrice').textContent=fmt(xauLive,4); $('fxPrice').textContent=fmt(jpyLive,3); $('etfPrice').textContent=fmt(etfLive,2);
         $('kVal').textContent=k.toFixed(8);
-        const theo = xauLive*jpyLive*k; const dev = etfLive/theo - 1;
+        const theo=xauLive*jpyLive*k; const dev=etfLive/theo-1;
         $('theo').textContent=fmt(theo,2); $('dev').textContent=(dev*100).toFixed(2)+'%'; setBadge(dev);
-        status.textContent = (mode==='day') ? '過去3営業日の回帰で計算' : '直近の分足データで回帰して計算';
-      }catch(e){ console.error(e); status.textContent='自動取得に失敗。手動入力で計算できます。'; }
-      finally{ $('checkBtn').disabled=false; }
+        if(st) st.textContent=(mode==='day')?'過去3営業日の回帰で計算':'直近の分足データで回帰して計算';
+      }catch(e){
+        console.error(e);
+        showError('自動取得に失敗。手動入力で計算できます。');
+      }finally{ enableBtn(); }
     }
 
-    $('checkBtn').addEventListener('click', safeRun);
-
-    async function safeRun(){
-      const btn=$('checkBtn');
-      try{
-        btn.disabled=false; // 保険で毎回解除
-        await run();
-      } catch(e){
-        console.error('[safeRun]', e);
-        $('status').textContent='実行時エラー。手動入力をご利用ください。';
-      } finally {
-        btn.disabled=false;
-      }
+    function wire(){
+      // Main button
+      const b=$('checkBtn'); if(b){ b.addEventListener('click',()=>{ run().catch(()=>enableBtn()); }); enableBtn(); }
+      // Tabs
+      const td=$('tabDay'); if(td) td.addEventListener('click', setModeDay);
+      const ts=$('tabScalp'); if(ts) ts.addEventListener('click', setModeScalp);
+      // Manual button
+      const mb=$('manualBtn'); if(mb){ mb.addEventListener('click',()=>{
+        const x=parseFloat($('xauManual').value), j=parseFloat($('fxManual').value), p=parseFloat($('etfManual').value), k=parseFloat($('kManual').value);
+        if(!isFinite(x)||!isFinite(j)||!isFinite(p)){ $('manualMsg').textContent='XAU/USD・USD/JPY・1540の3つは必須です。'; return; }
+        $('xauPrice').textContent=fmt(x,4); $('fxPrice').textContent=fmt(j,3); $('etfPrice').textContent=fmt(p,2);
+        if(isFinite(k)){ const theo=x*j*k; const dev=p/theo-1; $('theo').textContent=fmt(theo,2); $('dev').textContent=(dev*100).toFixed(2)+'%'; setBadge(dev); $('status').textContent='手動入力で計算しました'; $('kVal').textContent=k.toFixed(8); }
+        else{ $('theo').textContent='--'; $('dev').textContent='--'; const bd=$('badge'); if(bd){ bd.className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-gray-200 text-gray-700'; bd.textContent='k を入力すると理論値・乖離率を計算できます'; } $('status').textContent='k 未入力のため理論値は計算できません'; }
+      }); }
+      // Default mode
+      setModeDay();
     }
 
-    // Manual
-    $('manualBtn').addEventListener('click',()=>{
-      const x=parseFloat($('xauManual').value), j=parseFloat($('fxManual').value), p=parseFloat($('etfManual').value), k=parseFloat($('kManual').value);
-      if(!isFinite(x)||!isFinite(j)||!isFinite(p)){ $('manualMsg').textContent='XAU/USD・USD/JPY・1540の3つは必須です。'; return; }
-      $('xauPrice').textContent=fmt(x,4); $('fxPrice').textContent=fmt(j,3); $('etfPrice').textContent=fmt(p,2);
-      if(isFinite(k)){ const theo=x*j*k; const dev=p/theo-1; $('theo').textContent=fmt(theo,2); $('dev').textContent=(dev*100).toFixed(2)+'%'; setBadge(dev); $('status').textContent='手動入力で計算しました'; $('kVal').textContent=k.toFixed(8);} else { $('theo').textContent='--'; $('dev').textContent='--'; $('badge').className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-gray-200 text-gray-700'; $('badge').textContent='k を入力すると理論値・乖離率を計算できます'; $('status').textContent='k 未入力のため理論値は計算できません'; }
-    });
-
-    // Tab switching
-    function setModeDay(){ mode='day'; $('tabDay').className='px-4 py-2 rounded-xl text-sm font-medium bg-black text-white'; $('tabScalp').className='px-4 py-2 rounded-xl text-sm font-medium bg-white text-gray-800 border'; $('scalpControls').classList.add('hidden'); $('status').textContent='デイトレ（3日・日足）を選択中'; }
-    function setModeScalp(){ mode='scalp'; $('tabScalp').className='px-4 py-2 rounded-xl text-sm font-medium bg-black text-white'; $('tabDay').className='px-4 py-2 rounded-xl text-sm font-medium bg-white text-gray-800 border'; $('scalpControls').classList.remove('hidden'); $('status').textContent='スキャル（分足）を選択中'; }
-    $('tabDay').addEventListener('click', setModeDay);
-    $('tabScalp').addEventListener('click', setModeScalp);
-
-    // Default: デイトレタブ
-    setModeDay();
-    window.addEventListener('load',()=>{ const b=$('checkBtn'); if(b) b.disabled=false; });
-  </script>
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', wire); else wire();
+  })();
+</script>
 </body>
 </html>
