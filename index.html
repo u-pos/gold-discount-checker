@@ -78,7 +78,7 @@
 
     const YAHOO_CHART = (symbol, params={}) => {
       const qp = new URLSearchParams({ interval: '1d', range: '3mo', ...params });
-      return `https://r.jina.ai/http://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${qp}`;
+      return `https://r.jina.ai/https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${qp}`;
     };
 
     async function fetchYahoo(symbol, params) {
@@ -96,7 +96,8 @@
       const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) throw new Error('stooq HTTP ' + res.status);
       const csv = await res.text();
-      const lines = csv.trim().split('\n');
+      const lines = csv.trim().split('
+');
       if (lines.length < 2) throw new Error('stooq no rows');
       const cols = lines[1].split(',');
       const close = parseFloat(cols[6]);
