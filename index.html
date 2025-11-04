@@ -4,12 +4,22 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>1540 Discount Checker (Server Mode)</title>
+  <!-- 外部スクリプトは Tailwind CDN のみ許可。これで share-modal.js を実行させない -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 script-src 'self' https://cdn.tailwindcss.com 'unsafe-inline';
+                 style-src 'self' 'unsafe-inline';
+                 img-src 'self' data:;
+                 connect-src 'self';
+                 frame-ancestors 'none'">
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50 text-gray-900">
   <div class="max-w-xl mx-auto p-6">
     <h1 class="text-2xl font-bold mb-2">1540 Discount Checker</h1>
-    <p class="text-sm text-gray-600 mb-4">GitHub Actionsが生成する <code>data.json</code> を読み込み、乖離率を表示します。</p>
+    <p class="text-sm text-gray-600 mb-4">
+      GitHub Actions が生成する <code>data.json</code> を読み込み、乖離率を表示します。
+    </p>
 
     <div class="grid gap-3 md:grid-cols-3">
       <div class="p-4 bg-white rounded-2xl shadow">
@@ -27,9 +37,12 @@
     </div>
 
     <div class="mt-6 p-4 bg-white rounded-2xl shadow">
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3 flex-wrap">
         <button id="btn" type="button" class="px-4 py-2 rounded-xl bg-black text-white text-sm">乖離率を調べる</button>
-        <div id="status" class="text-sm text-gray-500">data.jsonを読み込みます</div>
+        <button id="openJson" type="button" class="px-3 py-2 rounded-xl bg-gray-200 text-gray-800 text-xs">
+          data.json を開く
+        </button>
+        <div id="status" class="text-sm text-gray-500">data.json を読み込みます</div>
       </div>
       <div class="mt-4 grid gap-3 md:grid-cols-3">
         <div><div class="text-xs text-gray-500">推定 k</div><div id="k" class="text-lg font-medium">--</div></div>
@@ -38,34 +51,53 @@
       </div>
       <div id="badge" class="mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-gray-200 text-gray-700">判定待ち</div>
       <div id="time" class="mt-2 text-xs text-gray-500"></div>
+      <pre id="debug" class="mt-3 text-xs text-red-600 whitespace-pre-wrap"></pre>
     </div>
 
-    <footer class="mt-8 text-xs text-gray-500">このツールは投資助言ではありません。自己責任でご利用ください。</footer>
+    <footer class="mt-8 text-xs text-gray-500">
+      このツールは投資助言ではありません。自己責任でご利用ください。
+    </footer>
   </div>
 
   <script>
     const $ = id => document.getElementById(id);
+    const JSON_URL = './data.json';
+
     function fmt(n, d=2){ return Number.isFinite(n) ? n.toLocaleString(undefined,{maximumFractionDigits:d}) : '--'; }
 
+    function safeParseJSON(text){
+      try { return JSON.parse(text); }
+      catch(e){ return null; }
+    }
+
     async function load() {
-      const btn = $('btn'); const st = $('status');
-      btn.disabled = true; st.textContent = '取得中…';
+      const btn = $('btn'); const st = $('status'); const dbg = $('debug');
+      btn.disabled = true; st.textContent = '取得中…'; dbg.textContent = '';
       try {
-        const res = await fetch('./data.json?ts=' + Date.now(), { cache:'no-store' });
-        if (!res.ok) throw new Error('data.json not found');
-        const j = await res.json();
+        const res = await fetch(`${JSON_URL}?ts=` + Date.now(), { cache:'no-store' });
+        if (!res.ok) throw new Error(`fetch failed: ${res.status} ${res.statusText}`);
+
+        const raw = await res.text();               // まずは生テキストで取得
+        if (!raw || !raw.trim()) {                  // 空ファイル/未生成
+          throw new Error('data.json is empty (まだ生成されていません)');
+        }
+
+        const j = safeParseJSON(raw);               // JSONとして安全にパース
+        if (!j || typeof j !== 'object') {          // HTMLが返ってきた等
+          throw new Error('data.json is not valid JSON.\n---raw---\n' + raw.slice(0, 300));
+        }
+
         $('xau').textContent = fmt(j.xauusd,4);
         $('jpy').textContent = fmt(j.usdjpy,3);
         $('etf').textContent = fmt(j.price1540,2);
 
-        // デイトレ（3日回帰）を優先。スキャルが取れていればそちらも使用。
-        const k = Number.isFinite(j.k_day) ? j.k_day : j.k_scalp;
+        const k    = Number.isFinite(j.k_day)    ? j.k_day    : j.k_scalp;
         const theo = Number.isFinite(j.theo_day) ? j.theo_day : j.theo_scalp;
-        const dev = Number.isFinite(j.dev_day) ? j.dev_day : j.dev_scalp;
+        const dev  = Number.isFinite(j.dev_day)  ? j.dev_day  : j.dev_scalp;
 
-        $('k').textContent = Number.isFinite(k) ? k.toFixed(8) : '--';
-        $('theo').textContent = Number.isFinite(theo) ? fmt(theo,2) : '--';
-        $('dev').textContent = Number.isFinite(dev) ? (dev*100).toFixed(2) + '%' : '--';
+        $('k').textContent    = Number.isFinite(k)    ? k.toFixed(8) : '--';
+        $('theo').textContent = Number.isFinite(theo) ? fmt(theo,2)  : '--';
+        $('dev').textContent  = Number.isFinite(dev)  ? (dev*100).toFixed(2) + '%' : '--';
 
         const b = $('badge');
         if (Number.isFinite(dev) && dev <= -0.01) {
@@ -76,15 +108,20 @@
           b.className = 'mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-yellow-100 text-yellow-800';
         }
         $('time').textContent = '更新: ' + (j.time_jst || '');
-        st.textContent = 'data.jsonから読み込みました';
+        st.textContent = 'data.json から読み込みました';
       } catch (e) {
         console.error(e);
-        $('status').textContent = 'data.jsonの取得に失敗しました。Actions設定を確認してください。';
+        $('status').textContent = '取得失敗：' + e.message;
+        $('debug').textContent  = (e && e.stack) ? e.stack : String(e);
       } finally {
         btn.disabled = false;
       }
     }
+
     document.getElementById('btn').addEventListener('click', load);
+    document.getElementById('openJson').addEventListener('click', () => {
+      window.open(JSON_URL + '?ts=' + Date.now(), '_blank');
+    });
   </script>
 </body>
 </html>
