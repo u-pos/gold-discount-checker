@@ -82,13 +82,26 @@
     };
 
     async function fetchYahoo(symbol, params) {
-      const url = YAHOO_CHART(symbol, params);
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
-      const r = data?.chart?.result?.[0];
-      if (!r) throw new Error('No result for ' + symbol);
-      return r;
+      const qp = new URLSearchParams({ interval: '1d', range: '3mo', ...params });
+      const urls = [
+        `https://r.jina.ai/https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${qp}`,
+        `https://r.jina.ai/https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${qp}`
+      ];
+      let lastErr;
+      for (const u of urls) {
+        try {
+          const ctrl = new AbortController();
+          const to = setTimeout(()=>ctrl.abort(), 8000);
+          const res = await fetch(u, { cache: 'no-store', signal: ctrl.signal });
+          clearTimeout(to);
+          if (!res.ok) throw new Error('HTTP '+res.status);
+          const data = await res.json();
+          const r = data?.chart?.result?.[0];
+          if (r) return r;
+          lastErr = new Error('No result');
+        } catch (e) { lastErr = e; }
+      }
+      throw lastErr || new Error('fetchYahoo failed');
     }
 
     async function fetchStooqCsv(symbol) {
@@ -203,7 +216,20 @@
       finally{ $('checkBtn').disabled=false; }
     }
 
-    $('checkBtn').addEventListener('click', run);
+    $('checkBtn').addEventListener('click', safeRun);
+
+    async function safeRun(){
+      const btn=$('checkBtn');
+      try{
+        btn.disabled=false; // 保険で毎回解除
+        await run();
+      } catch(e){
+        console.error('[safeRun]', e);
+        $('status').textContent='実行時エラー。手動入力をご利用ください。';
+      } finally {
+        btn.disabled=false;
+      }
+    }
 
     // Manual
     $('manualBtn').addEventListener('click',()=>{
@@ -221,6 +247,7 @@
 
     // Default: デイトレタブ
     setModeDay();
+    window.addEventListener('load',()=>{ const b=$('checkBtn'); if(b) b.disabled=false; });
   </script>
 </body>
 </html>
