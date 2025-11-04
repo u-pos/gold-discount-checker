@@ -3,287 +3,88 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>1540 Discount Checker – DayTrade/Scalp</title>
+  <title>1540 Discount Checker (Server Mode)</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50 text-gray-900">
-  <div class="max-w-4xl mx-auto p-6">
-    <header class="mb-6">
-      <h1 class="text-2xl font-bold">1540 Discount Checker</h1>
-      <p class="text-sm text-gray-600 mt-1">デイトレ（過去3営業日・日足）とスキャルピング（5分/15分足）に対応。金（XAU/USD）とドル円（USD/JPY）からkを回帰推定し、1540の理論値と乖離率を即時表示。</p>
-    </header>
+  <div class="max-w-xl mx-auto p-6">
+    <h1 class="text-2xl font-bold mb-2">1540 Discount Checker</h1>
+    <p class="text-sm text-gray-600 mb-4">GitHub Actionsが生成する <code>data.json</code> を読み込み、乖離率を表示します。</p>
 
-    <!-- MODE SWITCHER -->
-    <div class="flex flex-wrap items-center gap-3 mb-4">
-      <button id="tabDay" class="px-4 py-2 rounded-xl text-sm font-medium bg-black text-white">デイトレ（3日・日足）</button>
-      <button id="tabScalp" class="px-4 py-2 rounded-xl text-sm font-medium bg-white text-gray-800 border">スキャル（5分/15分）</button>
-      <div id="scalpControls" class="hidden items-center gap-2 text-sm">
-        <label class="flex items-center gap-2">足種
-          <select id="scalpInterval" class="border rounded-lg px-2 py-1">
-            <option value="5m" selected>5分</option>
-            <option value="15m">15分</option>
-          </select>
-        </label>
-        <label class="flex items-center gap-2">回帰に使う本数
-          <select id="scalpBars" class="border rounded-lg px-2 py-1">
-            <option value="36">直近36本（約3時間@5m）</option>
-            <option value="72">直近72本（約6時間@5m）</option>
-            <option value="96">直近96本（約8時間@5m）</option>
-          </select>
-        </label>
+    <div class="grid gap-3 md:grid-cols-3">
+      <div class="p-4 bg-white rounded-2xl shadow">
+        <div class="text-xs text-gray-500">XAU/USD</div>
+        <div id="xau" class="text-xl font-semibold">--</div>
       </div>
-      <div class="flex items-center gap-2 text-sm ml-auto">
-        <span class="text-gray-500">取得方法</span>
-        <select id="sourceMode" class="border rounded-lg px-2 py-1">
-          <option value="browser" selected>ブラウザ直（CORSあり）</option>
-          <option value="server">サーバ（Actions生成JSON）</option>
-        </select>
+      <div class="p-4 bg-white rounded-2xl shadow">
+        <div class="text-xs text-gray-500">USD/JPY</div>
+        <div id="jpy" class="text-xl font-semibold">--</div>
+      </div>
+      <div class="p-4 bg-white rounded-2xl shadow">
+        <div class="text-xs text-gray-500">1540.T</div>
+        <div id="etf" class="text-xl font-semibold">--</div>
       </div>
     </div>
-    </div>
 
-    <section class="grid gap-4 md:grid-cols-3">
-      <div class="p-4 bg-white rounded-2xl shadow"><div class="text-xs text-gray-500">XAU/USD</div><div id="xauPrice" class="text-xl font-semibold">--</div></div>
-      <div class="p-4 bg-white rounded-2xl shadow"><div class="text-xs text-gray-500">USD/JPY</div><div id="fxPrice" class="text-xl font-semibold">--</div></div>
-      <div class="p-4 bg-white rounded-2xl shadow"><div class="text-xs text-gray-500">1540.T</div><div id="etfPrice" class="text-xl font-semibold">--</div></div>
-    </section>
-
-    <section class="mt-6 p-4 bg-white rounded-2xl shadow">
-      <div class="flex items-center gap-3 flex-wrap">
-        <button id="checkBtn" type="button" onclick="if(window.__run1540){window.__run1540();} return false;" class="px-4 py-2 rounded-xl bg-black text-white text-sm">乖離率を調べる</button>
-        <div id="status" class="text-sm text-gray-500">モードを選んでボタンを押してください</div>
+    <div class="mt-6 p-4 bg-white rounded-2xl shadow">
+      <div class="flex items-center gap-3">
+        <button id="btn" type="button" class="px-4 py-2 rounded-xl bg-black text-white text-sm">乖離率を調べる</button>
+        <div id="status" class="text-sm text-gray-500">data.jsonを読み込みます</div>
       </div>
       <div class="mt-4 grid gap-3 md:grid-cols-3">
-        <div><div class="text-xs text-gray-500">推定 k</div><div id="kVal" class="text-lg font-medium">--</div></div>
+        <div><div class="text-xs text-gray-500">推定 k</div><div id="k" class="text-lg font-medium">--</div></div>
         <div><div class="text-xs text-gray-500">理論値（JPY）</div><div id="theo" class="text-lg font-medium">--</div></div>
         <div><div class="text-xs text-gray-500">乖離率</div><div id="dev" class="text-lg font-bold">--</div></div>
       </div>
       <div id="badge" class="mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-gray-200 text-gray-700">判定待ち</div>
-    </section>
+      <div id="time" class="mt-2 text-xs text-gray-500"></div>
+    </div>
 
-    <details class="mt-6">
-      <summary class="cursor-pointer text-sm text-gray-600">自動取得が失敗した時の手動入力</summary>
-      <div class="mt-3 grid gap-3 md:grid-cols-4">
-        <label class="text-sm">XAU/USD <input id="xauManual" type="number" step="0.0001" class="w-full border rounded-lg px-2 py-1"></label>
-        <label class="text-sm">USD/JPY <input id="fxManual" type="number" step="0.01" class="w-full border rounded-lg px-2 py-1"></label>
-        <label class="text-sm">1540 (JPY) <input id="etfManual" type="number" step="0.01" class="w-full border rounded-lg px-2 py-1"></label>
-        <label class="text-sm">k（任意） <input id="kManual" type="number" step="0.00000001" class="w-full border rounded-lg px-2 py-1"></label>
-      </div>
-      <button id="manualBtn" class="mt-3 px-3 py-2 bg-gray-800 text-white rounded-lg text-sm">手動で計算</button>
-      <div id="manualMsg" class="mt-2 text-sm text-gray-500"></div>
-    </details>
-
-    <footer class="mt-10 text-xs text-gray-500">
-      データ: Yahoo Finance（<code>query1.finance.yahoo.com</code>）を <code>r.jina.ai</code> 経由 / 失敗時 Stooq。投資助言ではありません。
-    </footer>
+    <footer class="mt-8 text-xs text-gray-500">このツールは投資助言ではありません。自己責任でご利用ください。</footer>
   </div>
 
   <script>
-  (function(){
-    const $ = (id) => document.getElementById(id);
+    const $ = id => document.getElementById(id);
+    function fmt(n, d=2){ return Number.isFinite(n) ? n.toLocaleString(undefined,{maximumFractionDigits:d}) : '--'; }
 
-    // ---- Safe logger & UI helpers ----
-    function showError(msg){ try{ const s=$('status'); if(s) s.textContent=msg; }catch(_){}
-      console.error(msg);
-    }
-    function enableBtn(){ const b=$('checkBtn'); if(!b) return; b.disabled=false; b.style.pointerEvents='auto'; b.style.opacity='1'; }
-    function disableBtn(){ const b=$('checkBtn'); if(!b) return; b.disabled=true; b.style.pointerEvents='none'; b.style.opacity='0.6'; }
+    async function load() {
+      const btn = $('btn'); const st = $('status');
+      btn.disabled = true; st.textContent = '取得中…';
+      try {
+        const res = await fetch('./data.json?ts=' + Date.now(), { cache:'no-store' });
+        if (!res.ok) throw new Error('data.json not found');
+        const j = await res.json();
+        $('xau').textContent = fmt(j.xauusd,4);
+        $('jpy').textContent = fmt(j.usdjpy,3);
+        $('etf').textContent = fmt(j.price1540,2);
 
-    // Always keep the main button usable even if errors happen
-    window.addEventListener('error', ()=>enableBtn());
-    window.addEventListener('unhandledrejection', ()=>enableBtn());
+        // デイトレ（3日回帰）を優先。スキャルが取れていればそちらも使用。
+        const k = Number.isFinite(j.k_day) ? j.k_day : j.k_scalp;
+        const theo = Number.isFinite(j.theo_day) ? j.theo_day : j.theo_scalp;
+        const dev = Number.isFinite(j.dev_day) ? j.dev_day : j.dev_scalp;
 
-    // ---- Data sources ----
-    const YAHOO_CHART = (symbol, params={}) => {
-      const qp = new URLSearchParams({ interval: '1d', range: '3mo', ...params });
-      // Use https->https to avoid mixed-content/CORS issues
-      return `https://r.jina.ai/https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${qp}`;
-    };
+        $('k').textContent = Number.isFinite(k) ? k.toFixed(8) : '--';
+        $('theo').textContent = Number.isFinite(theo) ? fmt(theo,2) : '--';
+        $('dev').textContent = Number.isFinite(dev) ? (dev*100).toFixed(2) + '%' : '--';
 
-    async function fetchYahoo(symbol, params){
-      const qp = new URLSearchParams({ interval: '1d', range: '3mo', ...params });
-      const urls = [
-        `https://r.jina.ai/https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${qp}`,
-        `https://r.jina.ai/https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${qp}`
-      ];
-      let lastErr;
-      for (const u of urls){
-        try{
-          const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),8000);
-          const res=await fetch(u,{cache:'no-store',signal:ctrl.signal}); clearTimeout(to);
-          if(!res.ok) throw new Error('HTTP '+res.status);
-          const data=await res.json();
-          const r=data?.chart?.result?.[0];
-          if(r) return r; else lastErr=new Error('No result');
-        }catch(e){ lastErr=e; }
-      }
-      throw lastErr||new Error('fetchYahoo failed');
-    }
-
-    async function fetchStooqCsv(symbol){
-      const url = `https://stooq.com/q/l/?s=${encodeURIComponent(symbol)}&f=sd2t2ohlcv&h&e=csv`;
-      const res = await fetch(url, { cache:'no-store' });
-      if(!res.ok) throw new Error('stooq HTTP '+res.status);
-      const txt = await res.text();
-      const lines = txt.trim().split('
-'); if(lines.length<2) throw new Error('stooq no rows');
-      const cols = lines[1].split(','); const close=parseFloat(cols[6]);
-      if(!isFinite(close)) throw new Error('stooq parse fail');
-      return close;
-    }
-
-    function fmt(n, digits=2){ return isFinite(n) ? n.toLocaleString(undefined,{maximumFractionDigits:digits}) : '--'; }
-
-    function alignDaily(xau,jpy,etf){
-      const toMap=(r)=>{ const ts=r.timestamp||[]; const closes=r.indicators?.quote?.[0]?.close||[]; const m=new Map();
-        for(let i=0;i<ts.length;i++){ const c=closes[i]; if(!isFinite(c)) continue; const d=new Date(ts[i]*1000).toISOString().slice(0,10); m.set(d,c);} return m; };
-      const mx=toMap(xau), mj=toMap(jpy), me=toMap(etf);
-      const dates=[...mx.keys()].filter(d=>mj.has(d)&&me.has(d)).sort();
-      return dates.map(d=>({date:d,xau:mx.get(d),jpy:mj.get(d),etf:me.get(d)}));
-    }
-
-    function alignIntraday(xau,jpy,etf){
-      const toMap=(r)=>{ const ts=r.timestamp||[]; const closes=r.indicators?.quote?.[0]?.close||[]; const m=new Map();
-        for(let i=0;i<ts.length;i++){ const c=closes[i]; if(!isFinite(c)) continue; const t=ts[i]*1000; m.set(t,c);} return m; };
-      const mx=toMap(xau), mj=toMap(jpy), me=toMap(etf);
-      const keys=[...mx.keys()].filter(t=>mj.has(t)&&me.has(t)).sort((a,b)=>a-b);
-      return keys.map(t=>({t,xau:mx.get(t),jpy:mj.get(t),etf:me.get(t)}));
-    }
-
-    function estimateKRegression(rows){ let num=0, den=0, n=0; for(const r of rows){ const x=r.xau*r.jpy, y=r.etf; if(isFinite(x)&&isFinite(y)&&x>0&&y>0){ num+=x*y; den+=x*x; n++; }} if(den<=0||n<5) throw new Error('十分なデータがありません'); return num/den; }
-
-    async function getLivePriceFromYahoo(result){
-      const meta=result.meta||{}; let p=meta.regularMarketPrice;
-      if(!isFinite(p)){ const closes=result.indicators?.quote?.[0]?.close||[]; for(let i=closes.length-1;i>=0;i--){ const c=closes[i]; if(isFinite(c)){ p=c; break; } } }
-      if(!isFinite(p)) throw new Error('no live price');
-      return p;
-    }
-
-    function setBadge(dev){ const b=$('badge'); if(!b) return; if(dev<=-0.01){ b.textContent='Discount Time（-1%以下）かも'; b.className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-green-100 text-green-800'; } else { b.textContent='様子見（-1%未満ではない）'; b.className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-yellow-100 text-yellow-800'; } }
-
-    // ---- Modes ----
-    let mode='day';
-    function setModeDay(){ mode='day'; $('tabDay').className='px-4 py-2 rounded-xl text-sm font-medium bg-black text-white'; $('tabScalp').className='px-4 py-2 rounded-xl text-sm font-medium bg-white text-gray-800 border'; const sc=$('scalpControls'); if(sc) sc.classList.add('hidden'); const st=$('status'); if(st) st.textContent='デイトレ（3日・日足）を選択中'; }
-    function setModeScalp(){ mode='scalp'; $('tabScalp').className='px-4 py-2 rounded-xl text-sm font-medium bg-black text-white'; $('tabDay').className='px-4 py-2 rounded-xl text-sm font-medium bg-white text-gray-800 border'; const sc=$('scalpControls'); if(sc) sc.classList.remove('hidden'); const st=$('status'); if(st) st.textContent='スキャル（分足）を選択中'; }
-
-    async function runDay(){
-      const [xauR,jpyR,etfR]=await Promise.all([
-        fetchYahoo('XAUUSD=X',{range:'1mo',interval:'1d'}),
-        fetchYahoo('JPY=X',{range:'1mo',interval:'1d'}),
-        fetchYahoo('1540.T',{range:'1mo',interval:'1d'})
-      ]);
-      const rows=alignDaily(xauR,jpyR,etfR).slice(-3);
-      const k=estimateKRegression(rows);
-      const [xauLive,jpyLive,etfLive]=await Promise.all([
-        getLivePriceFromYahoo(xauR).catch(()=>fetchStooqCsv('xauusd')),
-        getLivePriceFromYahoo(jpyR).catch(()=>fetchStooqCsv('usdjpy')),
-        getLivePriceFromYahoo(etfR).catch(()=>fetchStooqCsv('1540.jp'))
-      ]);
-      return {k,xauLive,jpyLive,etfLive};
-    }
-
-    async function runScalp(){
-      const interval = (document.getElementById('scalpInterval')?.value)||'5m';
-      const barsWant = parseInt((document.getElementById('scalpBars')?.value)||'36',10);
-      const range = interval==='5m' ? '5d' : '3mo';
-      const [xauR,jpyR,etfR]=await Promise.all([
-        fetchYahoo('XAUUSD=X',{range,interval}),
-        fetchYahoo('JPY=X',{range,interval}),
-        fetchYahoo('1540.T',{range,interval})
-      ]);
-      const rowsAll=alignIntraday(xauR,jpyR,etfR);
-      const rows=rowsAll.slice(-barsWant);
-      const k=estimateKRegression(rows);
-      const [xauLive,jpyLive,etfLive]=await Promise.all([
-        getLivePriceFromYahoo(xauR).catch(()=>fetchStooqCsv('xauusd')),
-        getLivePriceFromYahoo(jpyR).catch(()=>fetchStooqCsv('usdjpy')),
-        getLivePriceFromYahoo(etfR).catch(()=>fetchStooqCsv('1540.jp'))
-      ]);
-      return {k,xauLive,jpyLive,etfLive};
-    }
-
-    async function run(){
-      const st=$('status'); disableBtn(); if(st) st.textContent='取得中…';
-      const badge=$('badge'); if(badge){ badge.className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-gray-200 text-gray-700'; badge.textContent='判定待ち'; }
-      try{
-        const srcMode = $('sourceMode')?.value || 'browser';
-        if (srcMode === 'server') {
-          await runFromServer();
+        const b = $('badge');
+        if (Number.isFinite(dev) && dev <= -0.01) {
+          b.textContent = 'Discount Time（-1%以下）かも';
+          b.className = 'mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-green-100 text-green-800';
         } else {
-          const exec=(mode==='day')?runDay:runScalp;
-          const {k,xauLive,jpyLive,etfLive}=await exec();
-          $('xauPrice').textContent=fmt(xauLive,4); $('fxPrice').textContent=fmt(jpyLive,3); $('etfPrice').textContent=fmt(etfLive,2);
-          $('kVal').textContent=k.toFixed(8);
-          const theo=xauLive*jpyLive*k; const dev=etfLive/theo-1;
-          $('theo').textContent=fmt(theo,2); $('dev').textContent=(dev*100).toFixed(2)+'%'; setBadge(dev);
-          if(st) st.textContent=(mode==='day')?'過去3営業日の回帰で計算（ブラウザ直）':'直近の分足回帰で計算（ブラウザ直）';
+          b.textContent = '様子見（-1%未満ではない）';
+          b.className = 'mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-yellow-100 text-yellow-800';
         }
-      }catch(e){
+        $('time').textContent = '更新: ' + (j.time_jst || '');
+        st.textContent = 'data.jsonから読み込みました';
+      } catch (e) {
         console.error(e);
-        showError('自動取得に失敗。手動入力で計算できます。');
-      }finally{ enableBtn(); }
+        $('status').textContent = 'data.jsonの取得に失敗しました。Actions設定を確認してください。';
+      } finally {
+        btn.disabled = false;
+      }
     }
-
-    async function runFromServer(){
-      // 同一オリジンの /data.json を読む（Actionsが生成）
-      const res = await fetch('./data.json?ts=' + Date.now(), { cache:'no-store' });
-      if (!res.ok) throw new Error('data.json not found');
-      const j = await res.json();
-      // 期待スキーマ: { xauusd, usdjpy, price1540, k_day, k_scalp, theo_day, dev_day, theo_scalp, dev_scalp, mode }
-      const useScalp = (mode==='scalp' && isFinite(j.k_scalp) && isFinite(j.dev_scalp));
-      const k = useScalp ? j.k_scalp : j.k_day;
-      const theo = useScalp ? j.theo_scalp : j.theo_day;
-      const dev = useScalp ? j.dev_scalp : j.dev_day;
-      $('xauPrice').textContent=fmt(j.xauusd,4);
-      $('fxPrice').textContent=fmt(j.usdjpy,3);
-      $('etfPrice').textContent=fmt(j.price1540,2);
-      $('kVal').textContent = isFinite(k)? k.toFixed(8) : '--';
-      $('theo').textContent = isFinite(theo)? fmt(theo,2) : '--';
-      $('dev').textContent  = isFinite(dev)? (dev*100).toFixed(2)+'%' : '--';
-      setBadge(dev);
-      const st=$('status'); if(st) st.textContent = useScalp? 'Actions生成データ（スキャル）を使用' : 'Actions生成データ（デイトレ）を使用';
-    }
-
-    function wire(){
-      // expose a global fallback runner for inline onclick
-      window.__run1540 = () => { run().catch(()=>enableBtn()); };
-      // Main button
-      const b=$('checkBtn'); if(b){ b.addEventListener('click',()=>{ window.__run1540(); }); enableBtn(); }
-      // Document-level safety (in case event listeners fail)
-      document.addEventListener('click',(e)=>{ if((e.target&&e.target.id==='checkBtn')||(e.target&&e.target.closest&&e.target.closest('#checkBtn'))){ window.__run1540(); }});
-      // Tabs
-      const td=$('tabDay'); if(td) td.addEventListener('click', setModeDay);
-      const ts=$('tabScalp'); if(ts) ts.addEventListener('click', setModeScalp);
-      // Manual button
-      const mb=$('manualBtn'); if(mb){ mb.addEventListener('click',()=>{
-        const x=parseFloat($('xauManual').value), j=parseFloat($('fxManual').value), p=parseFloat($('etfManual').value), k=parseFloat($('kManual').value);
-        if(!isFinite(x)||!isFinite(j)||!isFinite(p)){ $('manualMsg').textContent='XAU/USD・USD/JPY・1540の3つは必須です。'; return; }
-        $('xauPrice').textContent=fmt(x,4); $('fxPrice').textContent=fmt(j,3); $('etfPrice').textContent=fmt(p,2);
-        if(isFinite(k)){ const theo=x*j*k; const dev=p/theo-1; $('theo').textContent=fmt(theo,2); $('dev').textContent=(dev*100).toFixed(2)+'%'; setBadge(dev); $('status').textContent='手動入力で計算しました'; $('kVal').textContent=k.toFixed(8); }
-        else{ $('theo').textContent='--'; $('dev').textContent='--'; const bd=$('badge'); if(bd){ bd.className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-gray-200 text-gray-700'; bd.textContent='k を入力すると理論値・乖離率を計算できます'; } $('status').textContent='k 未入力のため理論値は計算できません'; }
-      }); }
-      // Default mode
-      setModeDay();
-      // Ensure button becomes clickable even if earlier JS errored
-      setTimeout(()=>enableBtn(), 1000);
-    }); enableBtn(); }
-      // Tabs
-      const td=$('tabDay'); if(td) td.addEventListener('click', setModeDay);
-      const ts=$('tabScalp'); if(ts) ts.addEventListener('click', setModeScalp);
-      // Manual button
-      const mb=$('manualBtn'); if(mb){ mb.addEventListener('click',()=>{
-        const x=parseFloat($('xauManual').value), j=parseFloat($('fxManual').value), p=parseFloat($('etfManual').value), k=parseFloat($('kManual').value);
-        if(!isFinite(x)||!isFinite(j)||!isFinite(p)){ $('manualMsg').textContent='XAU/USD・USD/JPY・1540の3つは必須です。'; return; }
-        $('xauPrice').textContent=fmt(x,4); $('fxPrice').textContent=fmt(j,3); $('etfPrice').textContent=fmt(p,2);
-        if(isFinite(k)){ const theo=x*j*k; const dev=p/theo-1; $('theo').textContent=fmt(theo,2); $('dev').textContent=(dev*100).toFixed(2)+'%'; setBadge(dev); $('status').textContent='手動入力で計算しました'; $('kVal').textContent=k.toFixed(8); }
-        else{ $('theo').textContent='--'; $('dev').textContent='--'; const bd=$('badge'); if(bd){ bd.className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-gray-200 text-gray-700'; bd.textContent='k を入力すると理論値・乖離率を計算できます'; } $('status').textContent='k 未入力のため理論値は計算できません'; }
-      }); }
-      // Default mode
-      setModeDay();
-    }
-
-    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', wire); else wire();
-  })();
-</script>
+    document.getElementById('btn').addEventListener('click', load);
+  </script>
 </body>
 </html>
