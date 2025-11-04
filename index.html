@@ -32,6 +32,14 @@
           </select>
         </label>
       </div>
+      <div class="flex items-center gap-2 text-sm ml-auto">
+        <span class="text-gray-500">取得方法</span>
+        <select id="sourceMode" class="border rounded-lg px-2 py-1">
+          <option value="browser" selected>ブラウザ直（CORSあり）</option>
+          <option value="server">サーバ（Actions生成JSON）</option>
+        </select>
+      </div>
+    </div>
     </div>
 
     <section class="grid gap-4 md:grid-cols-3">
@@ -117,7 +125,8 @@
       const res = await fetch(url, { cache:'no-store' });
       if(!res.ok) throw new Error('stooq HTTP '+res.status);
       const txt = await res.text();
-      const lines = txt.trim().split('\n'); if(lines.length<2) throw new Error('stooq no rows');
+      const lines = txt.trim().split('
+'); if(lines.length<2) throw new Error('stooq no rows');
       const cols = lines[1].split(','); const close=parseFloat(cols[6]);
       if(!isFinite(close)) throw new Error('stooq parse fail');
       return close;
@@ -197,17 +206,42 @@
       const st=$('status'); disableBtn(); if(st) st.textContent='取得中…';
       const badge=$('badge'); if(badge){ badge.className='mt-4 inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-gray-200 text-gray-700'; badge.textContent='判定待ち'; }
       try{
-        const exec=(mode==='day')?runDay:runScalp;
-        const {k,xauLive,jpyLive,etfLive}=await exec();
-        $('xauPrice').textContent=fmt(xauLive,4); $('fxPrice').textContent=fmt(jpyLive,3); $('etfPrice').textContent=fmt(etfLive,2);
-        $('kVal').textContent=k.toFixed(8);
-        const theo=xauLive*jpyLive*k; const dev=etfLive/theo-1;
-        $('theo').textContent=fmt(theo,2); $('dev').textContent=(dev*100).toFixed(2)+'%'; setBadge(dev);
-        if(st) st.textContent=(mode==='day')?'過去3営業日の回帰で計算':'直近の分足データで回帰して計算';
+        const srcMode = $('sourceMode')?.value || 'browser';
+        if (srcMode === 'server') {
+          await runFromServer();
+        } else {
+          const exec=(mode==='day')?runDay:runScalp;
+          const {k,xauLive,jpyLive,etfLive}=await exec();
+          $('xauPrice').textContent=fmt(xauLive,4); $('fxPrice').textContent=fmt(jpyLive,3); $('etfPrice').textContent=fmt(etfLive,2);
+          $('kVal').textContent=k.toFixed(8);
+          const theo=xauLive*jpyLive*k; const dev=etfLive/theo-1;
+          $('theo').textContent=fmt(theo,2); $('dev').textContent=(dev*100).toFixed(2)+'%'; setBadge(dev);
+          if(st) st.textContent=(mode==='day')?'過去3営業日の回帰で計算（ブラウザ直）':'直近の分足回帰で計算（ブラウザ直）';
+        }
       }catch(e){
         console.error(e);
         showError('自動取得に失敗。手動入力で計算できます。');
       }finally{ enableBtn(); }
+    }
+
+    async function runFromServer(){
+      // 同一オリジンの /data.json を読む（Actionsが生成）
+      const res = await fetch('./data.json?ts=' + Date.now(), { cache:'no-store' });
+      if (!res.ok) throw new Error('data.json not found');
+      const j = await res.json();
+      // 期待スキーマ: { xauusd, usdjpy, price1540, k_day, k_scalp, theo_day, dev_day, theo_scalp, dev_scalp, mode }
+      const useScalp = (mode==='scalp' && isFinite(j.k_scalp) && isFinite(j.dev_scalp));
+      const k = useScalp ? j.k_scalp : j.k_day;
+      const theo = useScalp ? j.theo_scalp : j.theo_day;
+      const dev = useScalp ? j.dev_scalp : j.dev_day;
+      $('xauPrice').textContent=fmt(j.xauusd,4);
+      $('fxPrice').textContent=fmt(j.usdjpy,3);
+      $('etfPrice').textContent=fmt(j.price1540,2);
+      $('kVal').textContent = isFinite(k)? k.toFixed(8) : '--';
+      $('theo').textContent = isFinite(theo)? fmt(theo,2) : '--';
+      $('dev').textContent  = isFinite(dev)? (dev*100).toFixed(2)+'%' : '--';
+      setBadge(dev);
+      const st=$('status'); if(st) st.textContent = useScalp? 'Actions生成データ（スキャル）を使用' : 'Actions生成データ（デイトレ）を使用';
     }
 
     function wire(){
