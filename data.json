@@ -1,1 +1,12 @@
-
+{
+  "time_jst": "2025-11-04 12:34:00",
+  "xauusd": 2350.12,
+  "usdjpy": 151.23,
+  "price1540": 10000.0,
+  "k_day": 0.028136625452216485,
+  "theo_day": 10000.0,
+  "dev_day": 0.0,
+  "k_scalp": null,
+  "theo_scalp": null,
+  "dev_scalp": null
+}
